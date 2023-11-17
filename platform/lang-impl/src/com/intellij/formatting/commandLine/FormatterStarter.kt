@@ -101,7 +101,18 @@ fun createFormatter(args: List<String>, messageOutput: MessageOutput = StdIoMess
             "-allowDefaults" -> allowFactoryDefaults()
             else -> {
               if (arg.startsWith("-")) throw ArgumentsException("Unknown option $arg")
-              withEntry(arg)
+              val pattern = "^(.*.java)\\[(.*)\\]$"
+              val found = Regex(pattern).find(arg)
+              if (found != null) {
+                val fileName = found.groupValues[1]
+                withEntry(fileName)
+                found.groupValues[2]
+                  .split(",")
+                  .forEach { withOffset(fileName, it.toInt()) }
+              }
+              else {
+                withEntry(arg)
+              }
             }
           }
         }
@@ -110,6 +121,7 @@ fun createFormatter(args: List<String>, messageOutput: MessageOutput = StdIoMess
 
 
 private const val usageInfo = """
+FROM FORK
 Usage: format [-h] [-r|-R] [-d|-dry] [-s|-settings settingsPath] [-charset charsetName] [-allowDefaults] path1 path2...
   -h|-help         Show a help message and exit.
   -s|-settings     A path to Intellij IDEA code style settings .xml file. This setting will be

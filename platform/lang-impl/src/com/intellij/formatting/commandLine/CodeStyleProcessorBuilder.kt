@@ -18,6 +18,7 @@ class CodeStyleProcessorBuilder(private val messageOutput: MessageOutput) {
   private var fileMasks = emptyList<Regex>()
   val entries: ArrayList<File> = arrayListOf()
   var charset: Charset? = null
+  val offsets: HashMap<String, ArrayList<Int>> = hashMapOf()
 
   fun dryRun(): CodeStyleProcessorBuilder = this.also { isDryRun = true }
 
@@ -48,6 +49,10 @@ class CodeStyleProcessorBuilder(private val messageOutput: MessageOutput) {
 
   fun withCharset(charset: Charset): CodeStyleProcessorBuilder = this.also { this.charset = charset }
 
+  fun withOffset(filePath: String, offset: Int): CodeStyleProcessorBuilder = this.also {
+    offsets.computeIfAbsent(filePath) { arrayListOf() }.add(offset)
+  }
+
   private fun FileSetCodeStyleProcessor.configure() = apply {
     fileMasks.forEach { mask ->
       LOG.info("File mask regexp: ${mask.pattern}")
@@ -59,7 +64,7 @@ class CodeStyleProcessorBuilder(private val messageOutput: MessageOutput) {
   }
 
   private fun buildFormatter() =
-    FileSetFormatter(messageOutput, isRecursive, charset, primaryCodeStyle, defaultCodeStyle).configure()
+    FileSetFormatter(messageOutput, isRecursive, charset, primaryCodeStyle, defaultCodeStyle, offsets).configure()
 
   private fun buildFormatValidator() =
     FileSetFormatValidator(messageOutput, isRecursive, charset, primaryCodeStyle, defaultCodeStyle).configure()

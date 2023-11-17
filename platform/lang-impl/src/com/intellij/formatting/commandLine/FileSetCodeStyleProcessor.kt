@@ -16,23 +16,30 @@ import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.project.ex.ProjectManagerEx
+import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
+import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiFileFactory
 import com.intellij.psi.PsiManager
 import com.intellij.psi.codeStyle.CodeStyleManager
 import com.intellij.psi.codeStyle.CodeStyleSettings
 import com.intellij.psi.codeStyle.CodeStyleSettingsManager
+import com.intellij.psi.util.elementType
+import com.intellij.refactoring.suggested.endOffset
 import com.intellij.util.LocalTimeCounter
 import com.intellij.util.PlatformUtils
+import com.intellij.util.containers.forEachGuaranteed
+import org.codehaus.groovy.antlr.java.JavaTokenTypes
 import org.jetbrains.jps.model.serialization.PathMacroUtil
 import java.io.Closeable
 import java.nio.charset.Charset
 import java.nio.file.Files
 import java.util.*
+import kotlin.collections.ArrayList
 
 
 private val LOG = Logger.getInstance(FileSetCodeStyleProcessor::class.java)
@@ -53,7 +60,8 @@ class FileSetFormatter(
   isRecursive: Boolean,
   charset: Charset? = null,
   primaryCodeStyle: CodeStyleSettings? = null,
-  defaultCodeStyle: CodeStyleSettings? = null
+  defaultCodeStyle: CodeStyleSettings? = null,
+  private val offsets: Map<String, ArrayList<Int>>? = null
 ) : FileSetCodeStyleProcessor(messageOutput, isRecursive, charset, primaryCodeStyle, defaultCodeStyle) {
 
   override val operationContinuous: String = "Formatting"
@@ -99,9 +107,41 @@ class FileSetFormatter(
   private fun reformatFile(file: PsiFile, document: Document) {
     WriteCommandAction.runWriteCommandAction(project) {
       val codeStyleManager = CodeStyleManager.getInstance(project)
-      codeStyleManager.reformatText(file, 0, file.textLength)
+
+      val offs = offsets?.getOrDefault(file.virtualFile.path, emptyList())
+      if (offs?.isEmpty() == true) {
+        codeStyleManager.reformatText(file, 0, file.textLength)
+      } else {
+        val textRanges = offs
+          ?.map {
+            val startOffset = it
+            val token = file.findElementAt(it)
+            val semicolon = getSemiColon(token)
+            val endOffset = semicolon?.endOffset ?: file.textLength
+            TextRange(startOffset, endOffset)
+          }
+          ?.toList()
+        if (textRanges != null) {
+          codeStyleManager.reformatText(file, textRanges)
+        }
+      }
+
       PsiDocumentManager.getInstance(project).commitDocument(document)
     }
+  }
+
+  private fun getSemiColon(token: PsiElement?): PsiElement? {
+    var parent = token?.parent
+    var semi: PsiElement? = null
+    while (parent != null) {
+      val nextSibling = parent.nextSibling
+      if (nextSibling.elementType?.index == 198.toShort()) {
+        semi = nextSibling
+        parent = null
+      }
+      parent = parent?.parent
+    }
+    return semi
   }
 
   private fun closeOpenFiles() {
